@@ -1,0 +1,15 @@
+# Create virtual environment (recommended)
+python -m venv venv
+
+# Activate virtual environment
+# Windows:
+venv\Scripts\activate
+# Mac/Linux:
+source venv/bin/activate
+
+# Install packages
+pip install -r requirements.txt
+
+# Make sure virtual environment is activated
+# Run with uvicorn
+uvicorn main:app --reload
