@@ -90,10 +90,26 @@ def get_all_purchase_orders(limit: int = 3000, last_po_id: Optional[int] = None)
 def get_po_details(sales_order_no: str):
     conn = get_db_connection()
     cursor = conn.cursor()
-    
+
     try:
+        # --- Order header (carries Freight, SalesTax, HandlingCharge, etc.) ---
+        cursor.execute("SELECT * FROM [Orders] WHERE OrderID = ?", (sales_order_no,))
+        header_row = cursor.fetchone()
+
+        if not header_row:
+            raise HTTPException(status_code=404, detail=f"No sales order found for {sales_order_no}")
+
+        header_columns = [column[0] for column in cursor.description]
+        order = dict(zip(header_columns, header_row))
+
+        # Format header dates
+        for col in header_columns:
+            if 'Date' in col and isinstance(order.get(col), datetime):
+                order[col] = order[col].strftime('%m/%d/%Y')
+
+        # --- Line items ---
         cursor.execute("""
-            SELECT 
+            SELECT
                 sod.*,
                 p.ProductID AS Product_ProductID,
                 p.ProductName,
@@ -102,16 +118,53 @@ def get_po_details(sales_order_no: str):
             LEFT JOIN [Products] p ON sod.ProductID = p.ProductID
             WHERE sod.OrderID = ?
         """, (sales_order_no,))
-        
+
         columns = [column[0] for column in cursor.description]
-        results = [dict(zip(columns, row)) for row in cursor.fetchall()]
-        
-        if not results:
-            raise HTTPException(status_code=404, detail=f"No details found for purchase order {purchase_order_no}")
-            
-        return results
-        
+        line_items = [dict(zip(columns, row)) for row in cursor.fetchall()]
+
+        # Format line-item dates
+        for item in line_items:
+            for col in columns:
+                if 'Date' in col and isinstance(item.get(col), datetime):
+                    item[col] = item[col].strftime('%m/%d/%Y')
+
+        # --- Totals ---
+        # Subtotal is computed from the line items. Freight and HandlingCharge on
+        # the Orders header are dollar AMOUNTS, but **SalesTax is a RATE, not an
+        # amount** (e.g. 0.1 = 10%, and it varies per order / state). The Access
+        # "Orders New" form computes the displayed tax the same way:
+        #     Sales Tax = [SalesTax] * [Sub-Total]
+        # So the tax AMOUNT = subtotal * SalesTax. The old code returned the raw
+        # rate as the tax (e.g. 0.1 instead of 286.39 for order 43953).
+        subtotal = sum(
+            (item.get('OrderQty') or 0) * (item.get('OrderUnitPrice') or 0)
+            for item in line_items
+        )
+        freight = order.get('Freight') or 0
+        tax_rate = order.get('SalesTax') or 0
+        tax = subtotal * tax_rate
+        handling = order.get('HandlingCharge') or 0
+        total = subtotal + freight + tax + handling
+
+        return {
+            "order": order,
+            "line_items": line_items,
+            "totals": {
+                "subtotal": round(subtotal, 2),
+                "freight": round(freight, 2),
+                "tax_rate": tax_rate,
+                "tax": round(tax, 2),
+                "handling_charge": round(handling, 2),
+                "total": round(total, 2),
+            },
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
     finally:
+        cursor.close()
         conn.close()
     
     
