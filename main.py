@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from routes import orders, health, products, po, so, inventory, tracking
+from routes import orders, health, products, po, so, inventory, tracking, orders_write
 from config.settings import settings
 from dotenv import load_dotenv
 import os
@@ -32,13 +32,13 @@ app.add_middleware(
 
 # Include routers
 app.include_router(orders.router, prefix="/api/orders", tags=["Orders"])
+app.include_router(orders_write.router, prefix="/api/orders", tags=["Orders Write"])
 app.include_router(health.router, prefix="/api/health", tags=["Health"])
 app.include_router(products.router, prefix="/api/products", tags=["Products"])
 app.include_router(so.router, prefix="/api/so", tags=["SO"])
 app.include_router(po.router, prefix="/api/po", tags=["PO"])
 app.include_router(inventory.router, prefix="/api/inventory", tags=["Inventory"])
 app.include_router(tracking.router, prefix="/api/tracking", tags=["Tracking"])
-
 
 @app.get("/")
 def root():

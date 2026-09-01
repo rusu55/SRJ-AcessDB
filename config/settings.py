@@ -14,6 +14,7 @@ class Settings(BaseSettings):
     class Config:
         env_file = str(BASE_DIR / ".env")
         env_file_encoding = 'utf-8'
+        extra = 'ignore'   # tolerate extra keys in .env (e.g. ACCESS_WRITES_ENABLED)
 
 settings = Settings()
 
