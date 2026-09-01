@@ -194,6 +194,45 @@ _LINE_WIDTHS = {"OrderID": 5, "ProductID": 4, "ShippingID": 7,
                 "MCMake": 25, "MCModel": 25, "SurveyComment": 255}
 
 
+# ---------------------------------------------------------------------------
+# LINE IDENTITY.
+#
+# [Order Details] has NO primary key and no autonumber, so a line can only be
+# addressed by its VALUES. Keying on OrderID + ProductID + OrderQty +
+# OrderUnitPrice alone is not enough: an order may legitimately carry the same
+# product twice at the same quantity and price, and then one UPDATE rewrites
+# both rows and one DELETE removes both. This is the widest reliable signature
+# - every scalar column that distinguishes one line from another.
+#
+# Even this is not guaranteed unique (two lines can be identical in every
+# column), so callers must ALSO check how many rows share a signature and fall
+# back to rewriting the whole group. See _row_predicate and the group rewrite
+# in update_order.
+_SIG_COLS = ["ProductID", "RequiredDate", "OrderQty", "OrderUnitPrice",
+             "WarehouseID", "MCMake", "MCModel", "ShippingID", "ShippingDate",
+             "OrderShippedQty", "ProdLotNoID", "SkidOrPalletNo", "UnitNo",
+             "NoPack", "RTMCHour"]
+
+
+def _row_predicate(order_id: str, row: Dict[str, Any],
+                   sig_cols: List[str]) -> tuple:
+    """WHERE fragment + parameters addressing rows that look like `row`.
+
+    NULL needs `IS NULL`, not `= ?` - in SQL nothing equals NULL, so a column
+    left empty would silently make the predicate match no rows at all.
+    """
+    where = ["OrderID = ?"]
+    vals: List[Any] = [order_id]
+    for c in sig_cols:
+        v = row.get(c)
+        if v is None:
+            where.append(f"[{c}] IS NULL")
+        else:
+            where.append(f"[{c}] = ?")
+            vals.append(v)
+    return " AND ".join(where), vals
+
+
 def _too_long(cols: List[str], vals: List[Any]) -> List[str]:
     out = []
     for c, v in zip(cols, vals):
@@ -1233,6 +1272,10 @@ def update_order(order_id: str, body: OrderUpdateIn):
         # ---- lines ----------------------------------------------------------
         steps: List[Dict[str, Any]] = []
         seen_indexes: set = set()
+        # Line changes are collected here first and turned into SQL at the end,
+        # once it is known which lines have an identical twin on the order.
+        pending_updates: Dict[int, Dict[str, Any]] = {}
+        pending_deletes: set = set()
 
         for ln in body.lines:
             if ln.keyIndex is None:
@@ -1374,20 +1417,14 @@ def update_order(order_id: str, body: OrderUpdateIn):
             if not sets:
                 continue
             problems.extend(_too_long(changed_cols, vals_u))
-            # Access has no row id here, so the UPDATE is keyed by the line's
-            # identifying columns rather than its position.
-            steps.append({
-                "op": "update",
-                "keyIndex": ln.keyIndex,
-                "productId": row.get("ProductID"),
+            # Recorded, not emitted: the SQL that can address this line safely
+            # depends on whether any OTHER line looks identical to it, which is
+            # only known once every requested change has been collected.
+            pending_updates[ln.keyIndex] = {
                 "locked": locked,
                 "changed": changed_cols,
-                "sql": (f"UPDATE [Order Details] SET {', '.join(sets)} "
-                        f"WHERE OrderID = ? AND ProductID = ? AND OrderQty = ? "
-                        f"AND OrderUnitPrice = ?"),
-                "values": vals_u + [order_id, row.get("ProductID"),
-                                    row.get("OrderQty"), row.get("OrderUnitPrice")],
-            })
+                "values": dict(zip(changed_cols, vals_u)),
+            }
 
         # ---- deletions -------------------------------------------------------
         if body.deleteMissingLines:
@@ -1399,15 +1436,106 @@ def update_order(order_id: str, body: OrderUpdateIn):
                         f"line {idx} ({row.get('ProductID')}) has shipped — "
                         f"refusing to delete it")
                     continue
+                pending_deletes.add(idx)
+
+        # ---- turn the collected changes into SQL ----------------------------
+        #
+        # A line with no twin can be addressed directly by its values. A line
+        # that has one CANNOT: `UPDATE ... WHERE <values>` rewrites every twin
+        # and `DELETE ... WHERE <values>` removes every twin. For those, the
+        # whole look-alike GROUP is deleted and re-inserted from the rows we
+        # already read, with the intended change applied to just one of them —
+        # every other column is carried across verbatim, so nothing is lost.
+        sig_cols = [c for c in _SIG_COLS if c in cols]
+
+        def _sig(r: Dict[str, Any]) -> tuple:
+            return tuple(r.get(c) for c in sig_cols)
+
+        sig_counts: Dict[tuple, int] = {}
+        for r in current:
+            sig_counts[_sig(r)] = sig_counts.get(_sig(r), 0) + 1
+
+        touched = set(pending_updates) | pending_deletes
+        # Groups that need the delete-and-reinsert treatment.
+        rewrite_sigs = {
+            _sig(current[i]) for i in touched if sig_counts[_sig(current[i])] > 1
+        }
+
+        for idx in sorted(touched):
+            row = current[idx]
+            if _sig(row) in rewrite_sigs:
+                continue  # handled as a group below
+            where, key_vals = _row_predicate(order_id, row, sig_cols)
+            if idx in pending_deletes:
                 steps.append({
                     "op": "delete",
                     "keyIndex": idx,
                     "productId": row.get("ProductID"),
-                    "sql": ("DELETE FROM [Order Details] WHERE OrderID = ? "
-                            "AND ProductID = ? AND OrderQty = ? "
-                            "AND OrderUnitPrice = ?"),
-                    "values": [order_id, row.get("ProductID"),
-                               row.get("OrderQty"), row.get("OrderUnitPrice")],
+                    "sql": f"DELETE FROM [Order Details] WHERE {where}",
+                    "values": key_vals,
+                })
+            else:
+                up = pending_updates[idx]
+                sets = [f"[{c}] = ?" for c in up["changed"]]
+                steps.append({
+                    "op": "update",
+                    "keyIndex": idx,
+                    "productId": row.get("ProductID"),
+                    "locked": up["locked"],
+                    "changed": up["changed"],
+                    "sql": (f"UPDATE [Order Details] SET {', '.join(sets)} "
+                            f"WHERE {where}"),
+                    "values": [up["values"][c] for c in up["changed"]] + key_vals,
+                })
+
+        for sig in sorted(rewrite_sigs, key=lambda s: [str(x) for x in s]):
+            members = [i for i, r in enumerate(current) if _sig(r) == sig]
+            sample = current[members[0]]
+            # A shipped line must never be removed, not even for a moment and
+            # not even to be written straight back: it carries shipping history
+            # this endpoint has no business recreating. Refuse instead.
+            locked_members = [i for i in members if _line_locked(current[i])]
+            if locked_members:
+                problems.append(
+                    f"lines {members} ({sample.get('ProductID')}) are identical "
+                    f"and line(s) {locked_members} have shipped — this edit "
+                    f"cannot be applied to one of them without rewriting a "
+                    f"shipped line. Change it in Access directly."
+                )
+                continue
+            where, key_vals = _row_predicate(order_id, sample, sig_cols)
+            survivors = []
+            for i in members:
+                if i in pending_deletes:
+                    continue
+                r = dict(current[i])
+                if i in pending_updates:
+                    r.update(pending_updates[i]["values"])
+                survivors.append((i, r))
+            notes.append(
+                f"lines {members} are identical on this order — no key tells "
+                f"them apart, so all {len(members)} are removed and "
+                f"{len(survivors)} written back with the change applied to the "
+                f"one line you edited"
+            )
+            steps.append({
+                "op": "delete-group",
+                "keyIndexes": members,
+                "productId": sample.get("ProductID"),
+                "sql": f"DELETE FROM [Order Details] WHERE {where}",
+                "values": key_vals,
+            })
+            for i, r in survivors:
+                ins_cols = [c for c in cols if r.get(c) is not None]
+                steps.append({
+                    "op": "reinsert",
+                    "keyIndex": i,
+                    "productId": r.get("ProductID"),
+                    "changed": pending_updates.get(i, {}).get("changed", []),
+                    "sql": (f"INSERT INTO [Order Details] "
+                            f"([{'], ['.join(ins_cols)}]) "
+                            f"VALUES ({', '.join('?' * len(ins_cols))})"),
+                    "values": [r[c] for c in ins_cols],
                 })
 
         plan = {
