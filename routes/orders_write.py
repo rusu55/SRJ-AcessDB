@@ -1459,3 +1459,35 @@ def update_order(order_id: str, body: OrderUpdateIn):
     finally:
         if conn is not None:
             conn.close()
+
+
+@router.get("/write-status", dependencies=[Depends(verify_api_key)])
+def write_status():
+    """Can this instance write? Callers that update a SECOND system first (the
+    CRM writes Sage before Access on edits) must be able to ask before they
+    touch anything — otherwise a refusal here leaves the two out of step."""
+    conn = None
+    db_ok, db_error = False, None
+    try:
+        conn = get_db_connection()
+        conn.cursor().execute("SELECT TOP 1 OrderID FROM Orders")
+        db_ok = True
+    except Exception as e:
+        db_error = str(e)
+    finally:
+        if conn is not None:
+            try:
+                conn.close()
+            except Exception:
+                pass
+    try:
+        from config.settings import settings as _s
+        db_path = _s.ACCESS_DB_PATH
+    except Exception:
+        db_path = None
+    return {
+        "writesEnabled": _writes_enabled(),
+        "databaseReachable": db_ok,
+        "database": db_path,
+        "error": db_error,
+    }
