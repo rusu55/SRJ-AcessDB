@@ -243,9 +243,14 @@ def get_tracking(
         None, description="Filter by PRO / Tracking No (partial match)"
     ),
     year: Optional[int] = Query(
-        None, description="Filter by shipment year (Year of ShippingAdviceDate)"
+        None, description="Filter by shipment year (Year of ShippingAdviceDate). "
+        "NOTE: a shipment with no shipping advice has no ShippingAdviceDate and "
+        "is excluded by this filter — use min_order_no to page by order instead."
     ),
-    limit: int = Query(500, ge=1, le=5000, description="Max rows to return"),
+    min_order_no: Optional[int] = Query(
+        None, description="Only rows with OrderID >= this (newest-first paging without a date)"
+    ),
+    limit: int = Query(500, ge=1, le=5000, description="Max rows to return (newest OrderID first)"),
 ):
     """
     Extract tracking info for shipments. Returns every column of the tracking
@@ -279,6 +284,13 @@ def get_tracking(
             query += f" AND Year({_bracket(SHIPMENT_DATE_COLUMN)}) = ?"
             params.append(year)
 
+        if min_order_no is not None:
+            query += f" AND {_bracket(ORDER_COLUMN)} >= ?"
+            params.append(min_order_no)
+
+        # Newest first, so TOP <limit> is the most recent shipments, not the oldest.
+        query += f" ORDER BY {_bracket(ORDER_COLUMN)} DESC"
+
         cursor.execute(query, params)
         columns = [col[0] for col in cursor.description]
         rows = [_format_row(row, columns) for row in cursor.fetchall()]
@@ -286,7 +298,7 @@ def get_tracking(
 
         return {
             "table": TRACKING_TABLE,
-            "filters": {"order_no": order_no, "tracking_no": tracking_no},
+            "filters": {"order_no": order_no, "tracking_no": tracking_no, "year": year, "min_order_no": min_order_no},
             "count": len(rows),
             "tracking": rows,
         }
@@ -307,9 +319,14 @@ def get_tracking_enriched(
         None, description="Filter by PRO / Tracking No (partial match)"
     ),
     year: Optional[int] = Query(
-        None, description="Filter by shipment year (Year of ShippingAdviceDate)"
+        None, description="Filter by shipment year (Year of ShippingAdviceDate). "
+        "NOTE: a shipment with no shipping advice has no ShippingAdviceDate and "
+        "is excluded by this filter — use min_order_no to page by order instead."
     ),
-    limit: int = Query(500, ge=1, le=5000, description="Max rows to return"),
+    min_order_no: Optional[int] = Query(
+        None, description="Only rows with OrderID >= this (newest-first paging without a date)"
+    ),
+    limit: int = Query(500, ge=1, le=5000, description="Max rows to return (newest OrderID first)"),
 ):
     """
     Same as GET /api/tracking/ but each tracking row is enriched, mirroring the
@@ -352,6 +369,13 @@ def get_tracking_enriched(
             query += f" AND Year({_bracket(SHIPMENT_DATE_COLUMN)}) = ?"
             params.append(year)
 
+        if min_order_no is not None:
+            query += f" AND {_bracket(ORDER_COLUMN)} >= ?"
+            params.append(min_order_no)
+
+        # Newest first, so TOP <limit> is the most recent shipments, not the oldest.
+        query += f" ORDER BY {_bracket(ORDER_COLUMN)} DESC"
+
         cursor.execute(query, params)
         columns = [col[0] for col in cursor.description]
         rows = [_format_row(row, columns) for row in cursor.fetchall()]
@@ -367,7 +391,7 @@ def get_tracking_enriched(
                 SHIPPERS_TABLE,
                 WAREHOUSE_TABLE,
             ],
-            "filters": {"order_no": order_no, "tracking_no": tracking_no},
+            "filters": {"order_no": order_no, "tracking_no": tracking_no, "year": year, "min_order_no": min_order_no},
             "count": len(rows),
             "tracking": rows,
         }
