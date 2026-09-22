@@ -339,6 +339,42 @@ def ur_store_locations():
         conn.close()
 
 
+@router.get("/ur-stores/ids", dependencies=[Depends(verify_api_key)])
+def ur_store_ids():
+    """
+    Every distinct URStoreID that has ever been on an order, with the order
+    count and the latest order date — the "has this branch ordered" list the
+    CRMReports Quick Search crosses against SageCRM to find the branches that
+    have NOT.
+
+    Example: GET /api/orders/ur-stores/ids
+    """
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("""
+            SELECT URStoreID, COUNT(*) AS Orders, MAX(OrderDate) AS LastOrderDate
+            FROM Orders
+            WHERE URStoreID IS NOT NULL AND Trim(URStoreID) <> ''
+            GROUP BY URStoreID
+            ORDER BY URStoreID
+        """)
+        rows = []
+        for r in cursor.fetchall():
+            last = r[2]
+            rows.append({
+                "urStoreId": _clean(r[0]) or "",
+                "orders": int(r[1] or 0),
+                "lastOrderDate": last.strftime("%m/%d/%Y") if isinstance(last, datetime) else None,
+            })
+        return {"total": len(rows), "ids": rows}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
+    finally:
+        cursor.close()
+        conn.close()
+
+
 @router.get("/ur-stores/search", dependencies=[Depends(verify_api_key)])
 def search_ur_store_orders(
     q: Optional[str] = None,
