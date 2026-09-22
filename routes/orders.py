@@ -284,6 +284,123 @@ def search_orders(
         conn.close()
 
 
+# ---------------------------------------------------------------------------
+# UR store lookups — behind the "Quick Search" modal on CRMReports /ur-stores.
+#
+# Orders.URStoreID is the United Rentals branch code typed on the order
+# ("L33", "MC-J41"). It is free text, so the search is CONTAINS, and the
+# combobox values come from the orders themselves rather than a master list —
+# a state only shows up if something has actually shipped there.
+#
+# Both endpoints read ONLY orders that carry a URStoreID. The rest of the
+# Orders table is not UR business and would drown the lists.
+# ---------------------------------------------------------------------------
+
+# Every column the modal shows, and nothing it does not. SELECT * on Orders
+# drags 40-odd columns across the LAN per row; the modal reads eleven.
+_UR_ORDER_COLUMNS = (
+    "OrderID, CustomerID, OrderDate, CustomerOrderNumber, URStoreID, "
+    "ShipName, ShipCity, ShipRegion, BuyerName, BuyerEmail, BuyerTelNo, "
+    "Freight, HandlingCharge, SalesTax"
+)
+
+
+def _clean(v):
+    return (v or "").strip() if isinstance(v, str) else v
+
+
+@router.get("/ur-stores/locations", dependencies=[Depends(verify_api_key)])
+def ur_store_locations():
+    """
+    Distinct ShipRegion / ShipCity pairs on orders that carry a URStoreID,
+    with an order count each — the State and City comboboxes.
+
+    Example: GET /api/orders/ur-stores/locations
+    """
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("""
+            SELECT ShipRegion, ShipCity, COUNT(*) AS Orders
+            FROM Orders
+            WHERE URStoreID IS NOT NULL AND Trim(URStoreID) <> ''
+            GROUP BY ShipRegion, ShipCity
+            ORDER BY ShipRegion, ShipCity
+        """)
+        rows = [
+            {"state": _clean(r[0]) or "", "city": _clean(r[1]) or "", "orders": int(r[2] or 0)}
+            for r in cursor.fetchall()
+        ]
+        return {"total": len(rows), "locations": rows}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
+    finally:
+        cursor.close()
+        conn.close()
+
+
+@router.get("/ur-stores/search", dependencies=[Depends(verify_api_key)])
+def search_ur_store_orders(
+    q: Optional[str] = None,
+    state: Optional[str] = None,
+    city: Optional[str] = None,
+    limit: int = 1000,
+):
+    """
+    Orders carrying a URStoreID, filtered by store id (CONTAINS), and
+    optionally by exact state and/or city. Newest first.
+
+    Each row carries LineTotal — the sum of qty x price off Order Details —
+    so the caller can show an order value without a second call per order.
+    Freight, HandlingCharge and SalesTax (a RATE — see so.py) come along so
+    the caller can build the same total the Access form shows.
+
+    Example: GET /api/orders/ur-stores/search?q=L33&state=TX
+    """
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        limit = max(1, min(int(limit or 1000), 5000))
+        query = f"""
+            SELECT TOP {limit} {_UR_ORDER_COLUMNS},
+                   (SELECT SUM(d.OrderQty * d.OrderUnitPrice)
+                      FROM [Order Details] d
+                     WHERE d.OrderID = Orders.OrderID) AS LineTotal
+            FROM Orders
+            WHERE URStoreID IS NOT NULL AND Trim(URStoreID) <> ''
+        """
+        params = []
+        if q and q.strip():
+            query += " AND URStoreID LIKE ?"
+            params.append(f"%{q.strip()}%")
+        if state and state.strip():
+            query += " AND ShipRegion = ?"
+            params.append(state.strip())
+        if city and city.strip():
+            query += " AND ShipCity = ?"
+            params.append(city.strip())
+        query += " ORDER BY OrderDate DESC, OrderID DESC"
+
+        cursor.execute(query, params)
+        columns = [col[0] for col in cursor.description]
+        orders = []
+        for row in cursor.fetchall():
+            d = dict(zip(columns, row))
+            for col in columns:
+                v = d.get(col)
+                if isinstance(v, datetime):
+                    d[col] = v.strftime("%m/%d/%Y")
+                elif isinstance(v, str):
+                    d[col] = v.strip()
+            orders.append(d)
+        return {"total": len(orders), "limit": limit, "orders": orders}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
+    finally:
+        cursor.close()
+        conn.close()
+
+
 @router.get("/stats", dependencies=[Depends(verify_api_key)])
 def get_order_statistics():
     """
