@@ -1,0 +1,2232 @@
+{
+  "info": {
+    "name": "SRJ AccessDB API",
+    "description": "FastAPI over the SRJ Access database (port 8000).\n\nSet the collection variables first: baseUrl (default http://192.168.0.101:8000) and apiKey (the API_KEY from the server's .env). Every request sends it as the X-API-Key header.\n\nFolders marked (new) are the read-only report routes added for CRMReports. Folders marked (careful) can write to the .mdb - their POST/PUT/DELETE bodies default to dry_run=true.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "apikey",
+    "apikey": [
+      {
+        "key": "key",
+        "value": "X-API-Key",
+        "type": "string"
+      },
+      {
+        "key": "value",
+        "value": "{{apiKey}}",
+        "type": "string"
+      },
+      {
+        "key": "in",
+        "value": "header",
+        "type": "string"
+      }
+    ]
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://192.168.0.101:8000",
+      "type": "string"
+    },
+    {
+      "key": "apiKey",
+      "value": "",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "Health",
+      "item": [
+        {
+          "name": "GET health",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/health/",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "health"
+              ]
+            },
+            "description": "API is up."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Customers (new)",
+      "item": [
+        {
+          "name": "GET customers",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/customers/?q=united&with_stats=true&limit=50",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "customers"
+              ],
+              "query": [
+                {
+                  "key": "q",
+                  "value": "united",
+                  "description": "text in id, name, contact, city, state, email"
+                },
+                {
+                  "key": "with_stats",
+                  "value": "true",
+                  "description": "adds orders, first/last order, sales (slower)"
+                },
+                {
+                  "key": "limit",
+                  "value": "50"
+                }
+              ]
+            },
+            "description": "Search / list customers. With with_stats=true each row carries orders, firstOrder, lastOrder, sales, salesLast12Months."
+          }
+        },
+        {
+          "name": "GET customers/inactive",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/customers/inactive?months=12&min_orders=2&min_sales=0&limit=500",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "customers",
+                "inactive"
+              ],
+              "query": [
+                {
+                  "key": "months",
+                  "value": "12",
+                  "description": "no order for this many months"
+                },
+                {
+                  "key": "min_orders",
+                  "value": "2"
+                },
+                {
+                  "key": "min_sales",
+                  "value": "0"
+                },
+                {
+                  "key": "limit",
+                  "value": "500"
+                }
+              ]
+            },
+            "description": "Win-back list: bought before, nothing lately. Biggest lifetime sales first."
+          }
+        },
+        {
+          "name": "GET customers/new",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/customers/new?since=2026-01-01",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "customers",
+                "new"
+              ],
+              "query": [
+                {
+                  "key": "since",
+                  "value": "2026-01-01"
+                },
+                {
+                  "key": "until",
+                  "value": "",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "Customers whose FIRST order is in the window."
+          }
+        },
+        {
+          "name": "GET customers/:customerId",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/customers/:customerId?recent=20",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "customers",
+                ":customerId"
+              ],
+              "query": [
+                {
+                  "key": "recent",
+                  "value": "20",
+                  "description": "how many recent orders"
+                }
+              ],
+              "variable": [
+                {
+                  "key": "customerId",
+                  "value": "EASHAR"
+                }
+              ]
+            },
+            "description": "One customer: contact, totals (orders, sales, last 12 months, open lines), recent orders with status, equipment list."
+          }
+        },
+        {
+          "name": "GET customers/:customerId/items",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/customers/:customerId/items",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "customers",
+                ":customerId",
+                "items"
+              ],
+              "query": [
+                {
+                  "key": "since",
+                  "value": "2024-01-01",
+                  "disabled": true,
+                  "description": "default all history"
+                }
+              ],
+              "variable": [
+                {
+                  "key": "customerId",
+                  "value": "EASHAR"
+                }
+              ]
+            },
+            "description": "What the customer buys: qty, sales, orders, last price paid and date per item."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Sales (new)",
+      "item": [
+        {
+          "name": "GET sales/lines",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/sales/lines?since=2026-09-01&until=2026-10-01&basis=ordered",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "sales",
+                "lines"
+              ],
+              "query": [
+                {
+                  "key": "since",
+                  "value": "2026-09-01"
+                },
+                {
+                  "key": "until",
+                  "value": "2026-10-01"
+                },
+                {
+                  "key": "basis",
+                  "value": "ordered",
+                  "description": "ordered | shipped"
+                },
+                {
+                  "key": "customer_id",
+                  "value": "",
+                  "disabled": true
+                },
+                {
+                  "key": "item_no",
+                  "value": "",
+                  "disabled": true
+                },
+                {
+                  "key": "salesman_id",
+                  "value": "",
+                  "disabled": true
+                },
+                {
+                  "key": "limit",
+                  "value": "20000",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "Order lines in a window with customer, item, rep, source, carrier, amount. basis=ordered uses order date and OrderQty; basis=shipped uses ShippingDate and OrderShippedQty. Max 800 days."
+          }
+        },
+        {
+          "name": "GET sales/summary",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/sales/summary?group_by=month&since=2026-01-01&basis=ordered",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "sales",
+                "summary"
+              ],
+              "query": [
+                {
+                  "key": "group_by",
+                  "value": "month",
+                  "description": "month | week | customer | item | product_line | salesman | source | state | warehouse | ship_via"
+                },
+                {
+                  "key": "since",
+                  "value": "2026-01-01"
+                },
+                {
+                  "key": "until",
+                  "value": "",
+                  "disabled": true
+                },
+                {
+                  "key": "basis",
+                  "value": "ordered"
+                },
+                {
+                  "key": "customer_id",
+                  "value": "",
+                  "disabled": true
+                },
+                {
+                  "key": "item_no",
+                  "value": "",
+                  "disabled": true
+                },
+                {
+                  "key": "salesman_id",
+                  "value": "",
+                  "disabled": true
+                },
+                {
+                  "key": "limit",
+                  "value": "500",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "Totals per group: orders, customers, lines, qty, amount, sharePct. Date groups sorted by date, others biggest first."
+          }
+        },
+        {
+          "name": "GET sales/compare",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/sales/compare?year=2026",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "sales",
+                "compare"
+              ],
+              "query": [
+                {
+                  "key": "year",
+                  "value": "2026"
+                },
+                {
+                  "key": "basis",
+                  "value": "ordered",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "12 months of this year vs last year, plus YTD to today's date for both."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Open orders (new)",
+      "item": [
+        {
+          "name": "GET open-orders/so-lines",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/open-orders/so-lines?late_only=false&include_stale=false",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "open-orders",
+                "so-lines"
+              ],
+              "query": [
+                {
+                  "key": "customer_id",
+                  "value": "",
+                  "disabled": true
+                },
+                {
+                  "key": "item_no",
+                  "value": "",
+                  "disabled": true
+                },
+                {
+                  "key": "late_only",
+                  "value": "false"
+                },
+                {
+                  "key": "include_stale",
+                  "value": "false"
+                },
+                {
+                  "key": "stale_days",
+                  "value": "365",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "Unshipped SO lines: required date, days late, status, open value, onHand and stockCover (full / partial / none, allocated by required date). Lines on orders older than stale_days are left out but counted."
+          }
+        },
+        {
+          "name": "GET open-orders/po-lines",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/open-orders/po-lines?overdue_only=false&include_stale=false",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "open-orders",
+                "po-lines"
+              ],
+              "query": [
+                {
+                  "key": "supplier_id",
+                  "value": "",
+                  "disabled": true
+                },
+                {
+                  "key": "po_id",
+                  "value": "",
+                  "disabled": true
+                },
+                {
+                  "key": "item_no",
+                  "value": "",
+                  "disabled": true
+                },
+                {
+                  "key": "overdue_only",
+                  "value": "false"
+                },
+                {
+                  "key": "include_stale",
+                  "value": "false"
+                },
+                {
+                  "key": "stale_days",
+                  "value": "730",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "Every open PO line in ONE call (replaces /api/po/all + /api/po/details per PO): supplier, item, open qty/value, due ship date, days overdue."
+          }
+        },
+        {
+          "name": "GET open-orders/summary",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/open-orders/summary",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "open-orders",
+                "summary"
+              ]
+            },
+            "description": "Dashboard tile: open SO / PO lines and values split into late, due this week, due this month, later, no date."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Purchasing (new)",
+      "item": [
+        {
+          "name": "GET purchasing/suppliers",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/purchasing/suppliers",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "purchasing",
+                "suppliers"
+              ],
+              "query": [
+                {
+                  "key": "q",
+                  "value": "",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "Suppliers with PO count, last PO date, PO value, open lines/value, containers, last container shipped."
+          }
+        },
+        {
+          "name": "GET purchasing/po-lines",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/purchasing/po-lines?since=2026-01-01",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "purchasing",
+                "po-lines"
+              ],
+              "query": [
+                {
+                  "key": "since",
+                  "value": "2026-01-01"
+                },
+                {
+                  "key": "until",
+                  "value": "",
+                  "disabled": true
+                },
+                {
+                  "key": "supplier_id",
+                  "value": "155",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "Every line (open and closed) of POs dated in the window, header fields included."
+          }
+        },
+        {
+          "name": "GET purchasing/containers",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/purchasing/containers?with_lines=false",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "purchasing",
+                "containers"
+              ],
+              "query": [
+                {
+                  "key": "since",
+                  "value": "",
+                  "disabled": true,
+                  "description": "vendor ship date, default 180 days ago"
+                },
+                {
+                  "key": "until",
+                  "value": "",
+                  "disabled": true,
+                  "description": "default 120 days ahead"
+                },
+                {
+                  "key": "status",
+                  "value": "on the water",
+                  "disabled": true,
+                  "description": "booked | on the water | at port / inland | received"
+                },
+                {
+                  "key": "supplier_id",
+                  "value": "",
+                  "disabled": true
+                },
+                {
+                  "key": "with_lines",
+                  "value": "false"
+                }
+              ]
+            },
+            "description": "Containers (Vendor Shipment): status, container/BL/vessel, ship / ETA / receipt dates, transit days, invoice & freight, paperwork checklist, PO list."
+          }
+        },
+        {
+          "name": "GET purchasing/containers/:vendorShippingId",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/purchasing/containers/:vendorShippingId",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "purchasing",
+                "containers",
+                ":vendorShippingId"
+              ],
+              "variable": [
+                {
+                  "key": "vendorShippingId",
+                  "value": "JLLM26260C"
+                }
+              ]
+            },
+            "description": "One container: invoiced lines, lots received against it, invoiced vs received per item, serial count."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Stock (new)",
+      "item": [
+        {
+          "name": "GET stock/by-location",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/stock/by-location",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "stock",
+                "by-location"
+              ],
+              "query": [
+                {
+                  "key": "q",
+                  "value": "(IL)",
+                  "disabled": true
+                },
+                {
+                  "key": "warehouse_id",
+                  "value": "",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "On-hand qty, lots and items per location."
+          }
+        },
+        {
+          "name": "GET stock/lots",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/stock/lots?pallet=JL260930-46",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "stock",
+                "lots"
+              ],
+              "query": [
+                {
+                  "key": "item_no",
+                  "value": "",
+                  "disabled": true
+                },
+                {
+                  "key": "location",
+                  "value": "",
+                  "disabled": true
+                },
+                {
+                  "key": "pallet",
+                  "value": "JL260930-46",
+                  "description": "MPackNo or UnitNo"
+                },
+                {
+                  "key": "vendor_inv",
+                  "value": "",
+                  "disabled": true,
+                  "description": "container / VendorInvNo"
+                },
+                {
+                  "key": "include_empty",
+                  "value": "false",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "Inventory lots by item, location, pallet or container (at least one filter)."
+          }
+        },
+        {
+          "name": "GET stock/received",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/stock/received?since=2026-09-01",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "stock",
+                "received"
+              ],
+              "query": [
+                {
+                  "key": "since",
+                  "value": "2026-09-01"
+                },
+                {
+                  "key": "until",
+                  "value": "",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "Receiving log: lots put away in the window plus totals per container."
+          }
+        },
+        {
+          "name": "GET stock/reorder",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/stock/reorder?all_items=false",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "stock",
+                "reorder"
+              ],
+              "query": [
+                {
+                  "key": "all_items",
+                  "value": "false"
+                }
+              ]
+            },
+            "description": "Items where stock + open PO - open SO is at or below Products.ReOrderLevel, with a suggested qty."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Quality / ISO (new)",
+      "item": [
+        {
+          "name": "GET quality/on-time",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/quality/on-time?since=2026-01-01&group_by=month&late_lines=false",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "quality",
+                "on-time"
+              ],
+              "query": [
+                {
+                  "key": "since",
+                  "value": "2026-01-01"
+                },
+                {
+                  "key": "until",
+                  "value": "",
+                  "disabled": true
+                },
+                {
+                  "key": "group_by",
+                  "value": "month",
+                  "description": "month | customer | item | warehouse"
+                },
+                {
+                  "key": "late_lines",
+                  "value": "false"
+                }
+              ]
+            },
+            "description": "Customer on-time shipping: ShippingDate vs RequiredDate per line and per shipment."
+          }
+        },
+        {
+          "name": "GET quality/serial/:serial",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/quality/serial/:serial",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "quality",
+                "serial",
+                ":serial"
+              ],
+              "variable": [
+                {
+                  "key": "serial",
+                  "value": "2609180CN"
+                }
+              ]
+            },
+            "description": "Traceability: vendor + container for a serial / lot number, the inventory lot, and the order(s) it shipped on."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Data health (new)",
+      "item": [
+        {
+          "name": "GET data-health",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/data-health/?samples=20",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "data-health"
+              ],
+              "query": [
+                {
+                  "key": "samples",
+                  "value": "20"
+                }
+              ]
+            },
+            "description": "13 checks (duplicate lines, empty orders, odd dates, unknown products/customers, over-shipments, half-recorded shipments, stale open lines, duplicate customers / item codes, negative lots, PO over-shipments) with counts and examples. Reads whole tables - run it nightly, not on page load."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Orders",
+      "item": [
+        {
+          "name": "GET orders/order/:orderId",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/orders/order/:orderId",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "orders",
+                "order",
+                ":orderId"
+              ],
+              "variable": [
+                {
+                  "key": "orderId",
+                  "value": "44354"
+                }
+              ]
+            },
+            "description": "Order header + lines (SELECT *)."
+          }
+        },
+        {
+          "name": "GET orders/all",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/orders/all?limit=100&offset=0",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "orders",
+                "all"
+              ],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "100"
+                },
+                {
+                  "key": "offset",
+                  "value": "0"
+                }
+              ]
+            },
+            "description": "Orders, newest first."
+          }
+        },
+        {
+          "name": "GET orders/customer/:customerId",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/orders/customer/:customerId",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "orders",
+                "customer",
+                ":customerId"
+              ],
+              "variable": [
+                {
+                  "key": "customerId",
+                  "value": "EASHAR"
+                }
+              ]
+            },
+            "description": "All orders of one customer."
+          }
+        },
+        {
+          "name": "GET orders/search",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/orders/search",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "orders",
+                "search"
+              ],
+              "query": [
+                {
+                  "key": "customer_order_number",
+                  "value": "",
+                  "disabled": true
+                },
+                {
+                  "key": "order_date_from",
+                  "value": "",
+                  "disabled": true
+                },
+                {
+                  "key": "order_date_to",
+                  "value": "",
+                  "disabled": true
+                },
+                {
+                  "key": "customer_id",
+                  "value": "",
+                  "disabled": true
+                },
+                {
+                  "key": "buyer_name",
+                  "value": "",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "Search orders."
+          }
+        },
+        {
+          "name": "GET orders/ur-stores/locations",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/orders/ur-stores/locations",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "orders",
+                "ur-stores",
+                "locations"
+              ]
+            },
+            "description": "States / cities that UR orders shipped to."
+          }
+        },
+        {
+          "name": "GET orders/ur-stores/ids",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/orders/ur-stores/ids",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "orders",
+                "ur-stores",
+                "ids"
+              ]
+            },
+            "description": "Every UR branch id that ordered."
+          }
+        },
+        {
+          "name": "GET orders/ur-stores/search",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/orders/ur-stores/search",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "orders",
+                "ur-stores",
+                "search"
+              ],
+              "query": [
+                {
+                  "key": "q",
+                  "value": "",
+                  "disabled": true
+                },
+                {
+                  "key": "state",
+                  "value": "",
+                  "disabled": true
+                },
+                {
+                  "key": "city",
+                  "value": "",
+                  "disabled": true
+                },
+                {
+                  "key": "limit",
+                  "value": "1000",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "UR orders by store id / state / city."
+          }
+        },
+        {
+          "name": "GET orders/stats",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/orders/stats",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "orders",
+                "stats"
+              ]
+            },
+            "description": "Order counts."
+          }
+        },
+        {
+          "name": "GET orders/debug/columns",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/orders/debug/columns",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "orders",
+                "debug",
+                "columns"
+              ]
+            },
+            "description": "Columns of Orders / Order Details."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Orders write (careful)",
+      "item": [
+        {
+          "name": "GET orders/next-id",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/orders/next-id",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "orders",
+                "next-id"
+              ]
+            },
+            "description": "Next OrderID."
+          }
+        },
+        {
+          "name": "GET orders/lookups",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/orders/lookups",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "orders",
+                "lookups"
+              ]
+            },
+            "description": "Distinct header values."
+          }
+        },
+        {
+          "name": "GET orders/customers-list",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/orders/customers-list",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "orders",
+                "customers-list"
+              ],
+              "query": [
+                {
+                  "key": "q",
+                  "value": "",
+                  "disabled": true
+                },
+                {
+                  "key": "limit",
+                  "value": "3000",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "Customers for the picker."
+          }
+        },
+        {
+          "name": "GET orders/last-price",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/orders/last-price?product_id=4856",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "orders",
+                "last-price"
+              ],
+              "query": [
+                {
+                  "key": "product_id",
+                  "value": "4856"
+                },
+                {
+                  "key": "customer_id",
+                  "value": "",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "Last price for a product."
+          }
+        },
+        {
+          "name": "GET orders/salesmen",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/orders/salesmen",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "orders",
+                "salesmen"
+              ]
+            },
+            "description": "Salesmen."
+          }
+        },
+        {
+          "name": "GET orders/categories",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/orders/categories",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "orders",
+                "categories"
+              ]
+            },
+            "description": "Categories."
+          }
+        },
+        {
+          "name": "GET orders/schema",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/orders/schema",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "orders",
+                "schema"
+              ],
+              "query": [
+                {
+                  "key": "table",
+                  "value": "",
+                  "disabled": true
+                },
+                {
+                  "key": "sample",
+                  "value": "false",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "Table schema."
+          }
+        },
+        {
+          "name": "GET orders/pickers",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/orders/pickers",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "orders",
+                "pickers"
+              ]
+            },
+            "description": "Salesmen, categories, shippers, sources, warehouses."
+          }
+        },
+        {
+          "name": "GET orders/tax-samples",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/orders/tax-samples",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "orders",
+                "tax-samples"
+              ]
+            },
+            "description": "Recent SalesTax values."
+          }
+        },
+        {
+          "name": "GET orders/machines",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/orders/machines",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "orders",
+                "machines"
+              ],
+              "query": [
+                {
+                  "key": "product_id",
+                  "value": "",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "Machine make / model list."
+          }
+        },
+        {
+          "name": "GET orders/trace/:orderId",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/orders/trace/:orderId",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "orders",
+                "trace",
+                ":orderId"
+              ],
+              "query": [
+                {
+                  "key": "empty",
+                  "value": "false",
+                  "disabled": true
+                }
+              ],
+              "variable": [
+                {
+                  "key": "orderId",
+                  "value": "44354"
+                }
+              ]
+            },
+            "description": "Every field of an order."
+          }
+        },
+        {
+          "name": "GET orders/common-values",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/orders/common-values",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "orders",
+                "common-values"
+              ],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "15",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "Most used header values."
+          }
+        },
+        {
+          "name": "GET orders/edit-load/:orderId",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/orders/edit-load/:orderId",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "orders",
+                "edit-load",
+                ":orderId"
+              ],
+              "variable": [
+                {
+                  "key": "orderId",
+                  "value": "44354"
+                }
+              ]
+            },
+            "description": "Order for the edit form, lines marked locked."
+          }
+        },
+        {
+          "name": "GET orders/write-status",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/orders/write-status",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "orders",
+                "write-status"
+              ]
+            },
+            "description": "Are order writes enabled."
+          }
+        },
+        {
+          "name": "POST orders/create",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/orders/create",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "orders",
+                "create"
+              ]
+            },
+            "description": "Create an order. dry_run=true only validates. Needs ACCESS_WRITES_ENABLED=1 for a live run.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"customerId\": \"EASHAR\",\n  \"orderDate\": \"2026-10-12\",\n  \"customerOrderNumber\": \"PO-1234\",\n  \"buyerName\": \"Charles\",\n  \"shipVia\": \"CENTRA\",\n  \"freight\": 0,\n  \"handlingCharge\": 0,\n  \"salesTax\": 0,\n  \"shipName\": \"Eastman Hardscapes\",\n  \"shipAddress\": \"7824 Lebanon Rd\",\n  \"shipCity\": \"Mt Juliet\",\n  \"shipRegion\": \"TN\",\n  \"shipPostalCode\": \"37122\",\n  \"nameOrderEntry\": \"API\",\n  \"lines\": [\n    {\n      \"productId\": \"5802\",\n      \"orderQty\": 2,\n      \"orderUnitPrice\": 305.0,\n      \"requiredDate\": \"2026-10-20\",\n      \"warehouseId\": \"SRJ\"\n    }\n  ],\n  \"dry_run\": true\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "PUT orders/update/:orderId",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/orders/update/:orderId",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "orders",
+                "update",
+                ":orderId"
+              ],
+              "variable": [
+                {
+                  "key": "orderId",
+                  "value": "44354"
+                }
+              ]
+            },
+            "description": "Edit an order. Shipped lines are locked. dry_run=true only previews.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"header\": {\n    \"customerOrderNumber\": \"PO-1234-B\",\n    \"freight\": 45.0\n  },\n  \"lines\": [\n    {\n      \"keyIndex\": 0,\n      \"productId\": \"5802\",\n      \"orderQty\": 3,\n      \"orderUnitPrice\": 305.0\n    }\n  ],\n  \"deleteMissingLines\": false,\n  \"dry_run\": true\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "DELETE orders/delete/:orderId",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/orders/delete/:orderId?dry_run=true",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "orders",
+                "delete",
+                ":orderId"
+              ],
+              "query": [
+                {
+                  "key": "dry_run",
+                  "value": "true"
+                }
+              ],
+              "variable": [
+                {
+                  "key": "orderId",
+                  "value": "44354"
+                }
+              ]
+            },
+            "description": "Delete an unshipped order. dry_run=true only checks."
+          }
+        }
+      ]
+    },
+    {
+      "name": "SO",
+      "item": [
+        {
+          "name": "GET so/all",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/so/all?limit=3000",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "so",
+                "all"
+              ],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "3000"
+                },
+                {
+                  "key": "last_po_id",
+                  "value": "",
+                  "disabled": true,
+                  "description": "cursor: OrderID of the last row"
+                }
+              ]
+            },
+            "description": "Sales orders with orderTotal."
+          }
+        },
+        {
+          "name": "GET so/details/:salesOrderNo",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/so/details/:salesOrderNo",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "so",
+                "details",
+                ":salesOrderNo"
+              ],
+              "variable": [
+                {
+                  "key": "salesOrderNo",
+                  "value": "44354"
+                }
+              ]
+            },
+            "description": "Order + lines + totals (tax = subtotal x SalesTax rate)."
+          }
+        }
+      ]
+    },
+    {
+      "name": "PO",
+      "item": [
+        {
+          "name": "GET po/all",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/po/all?limit=5000",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "po",
+                "all"
+              ],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "5000"
+                },
+                {
+                  "key": "last_po_id",
+                  "value": "",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "Purchase orders with orderTotal (no API key check on this one)."
+          }
+        },
+        {
+          "name": "GET po/details/:purchaseOrderNo",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/po/details/:purchaseOrderNo",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "po",
+                "details",
+                ":purchaseOrderNo"
+              ],
+              "variable": [
+                {
+                  "key": "purchaseOrderNo",
+                  "value": "2093"
+                }
+              ]
+            },
+            "description": "PO lines with item and supplier."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Products",
+      "item": [
+        {
+          "name": "GET products/all",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/products/all?limit=100&offset=0",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "products",
+                "all"
+              ],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "100"
+                },
+                {
+                  "key": "offset",
+                  "value": "0"
+                }
+              ]
+            },
+            "description": "Products."
+          }
+        },
+        {
+          "name": "GET products/debug/columns",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/products/debug/columns",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "products",
+                "debug",
+                "columns"
+              ]
+            },
+            "description": "Products columns."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Inventory",
+      "item": [
+        {
+          "name": "GET inventory/all",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/inventory/all",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "inventory",
+                "all"
+              ]
+            },
+            "description": "Stock, open POs and open SOs for every item."
+          }
+        },
+        {
+          "name": "GET inventory/item/:itemNo",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/inventory/item/:itemNo",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "inventory",
+                "item",
+                ":itemNo"
+              ],
+              "variable": [
+                {
+                  "key": "itemNo",
+                  "value": "265x52x72SHN"
+                }
+              ]
+            },
+            "description": "The same for one item."
+          }
+        },
+        {
+          "name": "GET inventory/debug/trace/:itemNo",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/inventory/debug/trace/:itemNo",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "inventory",
+                "debug",
+                "trace",
+                ":itemNo"
+              ],
+              "variable": [
+                {
+                  "key": "itemNo",
+                  "value": "265x52x72SHN"
+                }
+              ]
+            },
+            "description": "Debug one item."
+          }
+        },
+        {
+          "name": "GET inventory/debug/duplicate-codes",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/inventory/debug/duplicate-codes",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "inventory",
+                "debug",
+                "duplicate-codes"
+              ]
+            },
+            "description": "Item codes on several products."
+          }
+        },
+        {
+          "name": "GET inventory/debug/products",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/inventory/debug/products",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "inventory",
+                "debug",
+                "products"
+              ]
+            },
+            "description": "Products in Inventory."
+          }
+        },
+        {
+          "name": "GET inventory/debug/columns",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/inventory/debug/columns",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "inventory",
+                "debug",
+                "columns"
+              ]
+            },
+            "description": "Inventory columns."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Inventory rows (careful)",
+      "item": [
+        {
+          "name": "GET inventory-rows/on-hand",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/inventory-rows/on-hand",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "inventory-rows",
+                "on-hand"
+              ]
+            },
+            "description": "Every on-hand row with fingerprint + dup_count."
+          }
+        },
+        {
+          "name": "POST inventory-rows/backup",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/inventory-rows/backup",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "inventory-rows",
+                "backup"
+              ]
+            },
+            "description": "Copy the .mdb to _backups (needs ACCESS_INVENTORY_WRITES_ENABLED=1).",
+            "body": {
+              "mode": "raw",
+              "raw": ""
+            }
+          }
+        },
+        {
+          "name": "POST inventory-rows/update",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/inventory-rows/update",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "inventory-rows",
+                "update"
+              ]
+            },
+            "description": "Change ONE inventory row (Location, WarehouseID, MPackNo, UnitNo, qty). dry_run=true only previews.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"fingerprint\": \"<fingerprint from /on-hand>\",\n  \"product_id\": \"6166\",\n  \"set\": {\n    \"Location\": \"(IL) I2-FL4-R\"\n  },\n  \"expect\": {\n    \"Location\": \"(IL) RCV\"\n  },\n  \"dry_run\": true\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Tracking",
+      "item": [
+        {
+          "name": "GET tracking",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/tracking/",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "tracking"
+              ],
+              "query": [
+                {
+                  "key": "order_no",
+                  "value": "",
+                  "disabled": true
+                },
+                {
+                  "key": "tracking_no",
+                  "value": "",
+                  "disabled": true
+                },
+                {
+                  "key": "year",
+                  "value": "2026",
+                  "disabled": true
+                },
+                {
+                  "key": "min_order_no",
+                  "value": "",
+                  "disabled": true
+                },
+                {
+                  "key": "limit",
+                  "value": "",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "Shipping / tracking rows."
+          }
+        },
+        {
+          "name": "GET tracking/enriched",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/tracking/enriched",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "tracking",
+                "enriched"
+              ],
+              "query": [
+                {
+                  "key": "order_no",
+                  "value": "",
+                  "disabled": true
+                },
+                {
+                  "key": "tracking_no",
+                  "value": "",
+                  "disabled": true
+                },
+                {
+                  "key": "year",
+                  "value": "2026",
+                  "disabled": true
+                },
+                {
+                  "key": "min_order_no",
+                  "value": "",
+                  "disabled": true
+                },
+                {
+                  "key": "limit",
+                  "value": "",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "Tracking rows with order, customer, carrier."
+          }
+        },
+        {
+          "name": "GET tracking/stats/by-year",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/tracking/stats/by-year",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "tracking",
+                "stats",
+                "by-year"
+              ],
+              "query": [
+                {
+                  "key": "year",
+                  "value": "2026",
+                  "disabled": true
+                },
+                {
+                  "key": "from_year",
+                  "value": "",
+                  "disabled": true
+                },
+                {
+                  "key": "to_year",
+                  "value": "",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "Shipments per year / carrier."
+          }
+        },
+        {
+          "name": "GET tracking/stats/late",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/tracking/stats/late",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "tracking",
+                "stats",
+                "late"
+              ],
+              "query": [
+                {
+                  "key": "year",
+                  "value": "2026",
+                  "disabled": true
+                },
+                {
+                  "key": "from_year",
+                  "value": "",
+                  "disabled": true
+                },
+                {
+                  "key": "to_year",
+                  "value": "",
+                  "disabled": true
+                },
+                {
+                  "key": "limit",
+                  "value": "1000",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "Late deliveries."
+          }
+        },
+        {
+          "name": "GET tracking/debug/tables",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/tracking/debug/tables",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "tracking",
+                "debug",
+                "tables"
+              ]
+            },
+            "description": "Tables in the .mdb."
+          }
+        },
+        {
+          "name": "GET tracking/debug/columns",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/tracking/debug/columns?table=Shipping",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "tracking",
+                "debug",
+                "columns"
+              ],
+              "query": [
+                {
+                  "key": "table",
+                  "value": "Shipping"
+                }
+              ]
+            },
+            "description": "Columns of a table."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Shipments",
+      "item": [
+        {
+          "name": "GET shipments/recent",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/shipments/recent?since=2026-09-01&until=2026-10-01",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "shipments",
+                "recent"
+              ],
+              "query": [
+                {
+                  "key": "since",
+                  "value": "2026-09-01"
+                },
+                {
+                  "key": "until",
+                  "value": "2026-10-01"
+                },
+                {
+                  "key": "full_orders",
+                  "value": "false",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "Order lines shipped in a window."
+          }
+        }
+      ]
+    }
+  ]
+}

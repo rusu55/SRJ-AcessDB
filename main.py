@@ -3,6 +3,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from routes import orders, health, products, po, so, inventory, tracking, orders_write, inventory_rows
 # Read-only: order lines shipped in a date window (CRMReports' "shipped in Access, not in Sage" alert).
 from routes import shipments
+# Read-only report routers for CRMReports (customers, sales, open orders, purchasing, stock, quality, data health).
+from routes import customers, sales, open_orders, purchasing, stock, quality, data_health
 from config.settings import settings
 from dotenv import load_dotenv
 import os
@@ -43,6 +45,13 @@ app.include_router(inventory.router, prefix="/api/inventory", tags=["Inventory"]
 app.include_router(inventory_rows.router, prefix="/api/inventory-rows", tags=["Inventory Rows (read-only)"])
 app.include_router(tracking.router, prefix="/api/tracking", tags=["Tracking"])
 app.include_router(shipments.router, prefix="/api/shipments", tags=["Shipments (read-only)"])
+app.include_router(customers.router, prefix="/api/customers", tags=["Customers (read-only)"])
+app.include_router(sales.router, prefix="/api/sales", tags=["Sales (read-only)"])
+app.include_router(open_orders.router, prefix="/api/open-orders", tags=["Open orders (read-only)"])
+app.include_router(purchasing.router, prefix="/api/purchasing", tags=["Purchasing (read-only)"])
+app.include_router(stock.router, prefix="/api/stock", tags=["Stock (read-only)"])
+app.include_router(quality.router, prefix="/api/quality", tags=["Quality (read-only)"])
+app.include_router(data_health.router, prefix="/api/data-health", tags=["Data health (read-only)"])
 
 @app.get("/")
 def root():
