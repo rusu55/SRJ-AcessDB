@@ -5,6 +5,7 @@ Built for CRMReports /inventory-audit -> Pallets & Locations -> "Access fix",
 which corrects the Access DB from Sage 100 (pallet id, location, quantity).
 
   GET  /on-hand   read-only: every row with stock + fingerprint + dup_count
+  GET  /pack/{p}  read-only: one pallet's rows (MPackNo or UnitNo) + lot numbers
   POST /backup    copy the .mdb to a timestamped file before a live run
   POST /update    change ONE row, picked by fingerprint (dry run by default)
 
@@ -140,6 +141,93 @@ def inventory_rows_on_hand():
             "duplicate_rows": sum(n for n in counts.values() if n > 1),
             "rows": out,
         }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
+    finally:
+        cursor.close()
+        conn.close()
+
+
+def _pack_key(v: Any) -> str:
+    """Pallet id for matching: trim, upper-case, leading zeros of each digit run
+    dropped - Access writes TZ260709-01 where Sage writes TZ260709-1. Only
+    LEADING zeros go, so -1 and -10 stay apart (same rule as CRMReports
+    normPalletKey)."""
+    import re
+    s = ("" if v is None else str(v)).strip().upper()
+    return re.sub(r"\d+", lambda m: m.group(0).lstrip("0") or "0", s)
+
+
+@router.get("/pack/{pallet}", dependencies=[Depends(verify_api_key)])
+def inventory_rows_for_pack(pallet: str, include_shipped: bool = False):
+    """
+    The Inventory rows of ONE pallet: MPackNo or UnitNo equal to `pallet`
+    (leading zeros ignored). Each row with its item, location, warehouse,
+    receipt / shipped / on-hand qty, Unit No and the lot / serial numbers
+    (ProdLotNo1..40), plus the fingerprint + dup_count POST /update needs.
+    On-hand rows only unless include_shipped=true.
+    Example: GET /api/inventory-rows/pack/TZ260709-1
+    Read-only, like /on-hand.
+    """
+    want = _pack_key(pallet)
+    if not want:
+        raise HTTPException(status_code=400, detail="pallet is required")
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("SELECT * FROM Inventory")
+        inv_cols = [c[0] for c in cursor.description]
+        raw_rows = cursor.fetchall()
+        idx = {name: i for i, name in enumerate(inv_cols)}
+
+        def col(r, name):
+            i = idx.get(name)
+            return None if i is None else r[i]
+
+        prints = [_fingerprint(list(r)) for r in raw_rows]
+        counts = Counter(prints)
+
+        hits = [
+            (r, fp) for r, fp in zip(raw_rows, prints)
+            if _pack_key(col(r, "MPackNo")) == want or _pack_key(col(r, "UnitNo")) == want
+        ]
+        item_by_pid: Dict[str, str] = {}
+        if hits:
+            cursor.execute("SELECT ProductID, ItemNo FROM Products")
+            item_by_pid = {
+                ("" if x[0] is None else str(x[0]).strip().upper()): ("" if x[1] is None else str(x[1]).strip())
+                for x in cursor.fetchall()
+            }
+
+        out: List[Dict[str, Any]] = []
+        for r, fp in hits:
+            receipt = _num(col(r, "WarehouseReceiptQty"))
+            shipped = _num(col(r, "OrderShippedQty"))
+            if receipt == shipped and not include_shipped:
+                continue
+            pid = col(r, "ProductID")
+            pid_key = "" if pid is None else str(pid).strip().upper()
+            lots = [str(col(r, f"ProdLotNo{i}")).strip() for i in range(1, 41) if col(r, f"ProdLotNo{i}") not in (None, "")]
+            out.append({
+                "fingerprint": fp,
+                "dup_count": counts[fp],
+                "product_id": pid,
+                "item_no": item_by_pid.get(pid_key, ""),
+                "location": col(r, "Location"),
+                "warehouse_id": col(r, "WarehouseID"),
+                "mpack_no": col(r, "MPackNo"),
+                "unit_no": col(r, "UnitNo"),
+                "vendor_inv_no": col(r, "VendorInvNo"),
+                "receipt_date": _date(col(r, "WarehouseReceiptDate")),
+                "receipt_qty": receipt,
+                "shipped_qty": shipped,
+                "qty_on_hand": receipt - shipped,
+                "shipping_date": _date(col(r, "ShippingDate")),
+                "lot_numbers": [x for x in lots if x],
+            })
+        return {"pallet": pallet, "key": want, "count": len(out), "rows": out}
     except HTTPException:
         raise
     except Exception as e:
