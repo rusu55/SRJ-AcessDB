@@ -86,6 +86,56 @@ def get_all_purchase_orders(limit: int = 3000, last_po_id: Optional[int] = None)
         cursor.close()
         conn.close()
 
+@router.get("/sources", dependencies=[Depends(verify_api_key)])
+def get_order_sources(since: Optional[str] = None):
+    """Order -> order source (eBay, Website, Phone...) for every order in [Orders],
+    optionally only orders dated on/after `since` (YYYY-MM-DD). Three columns,
+    no per-order subquery - light enough for the CRM /sales page to pull on
+    every visit and filter the Sage list by source. Read-only.
+
+    { "sources": [{"id": "2", "name": "eBay"}, ...],
+      "orders":  [{"orderId": "12345", "sourceId": "2", "source": "eBay"}, ...] }
+    """
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("SELECT OrderSourceID, OrderSource FROM [Order Sources]")
+        names = {}
+        for sid, name in cursor.fetchall():
+            sid_s = str(sid).strip() if sid is not None else ""
+            if sid_s:
+                names[sid_s] = (str(name).strip() if name is not None else "") or sid_s
+        sources = [{"id": k, "name": v} for k, v in sorted(names.items(), key=lambda kv: kv[1].lower())]
+
+        sql = "SELECT OrderID, OrderSourceID FROM [Orders]"
+        params: list = []
+        if since:
+            try:
+                d0 = datetime.strptime(since.strip()[:10], "%Y-%m-%d")
+            except ValueError:
+                raise HTTPException(status_code=400, detail="since must be YYYY-MM-DD")
+            sql += " WHERE OrderDate >= ?"
+            params.append(d0)
+        cursor.execute(sql, params)
+        orders = []
+        for oid, sid in cursor.fetchall():
+            if oid is None:
+                continue
+            sid_s = str(sid).strip() if sid is not None else ""
+            if not sid_s:
+                continue
+            orders.append({"orderId": str(oid).strip(), "sourceId": sid_s,
+                           "source": names.get(sid_s) or sid_s})
+        return {"count": len(orders), "sources": sources, "orders": orders}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
+    finally:
+        cursor.close()
+        conn.close()
+
+
 @router.get("/details/{sales_order_no}", dependencies=[Depends(verify_api_key)])
 def get_po_details(sales_order_no: str):
     conn = get_db_connection()
