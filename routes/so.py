@@ -94,7 +94,7 @@ def get_order_sources(since: Optional[str] = None):
     every visit and filter the Sage list by source. Read-only.
 
     { "sources": [{"id": "2", "name": "eBay"}, ...],
-      "orders":  [{"orderId": "12345", "sourceId": "2", "source": "eBay"}, ...] }
+      "orders":  [{"orderId": "12345", "sourceId": "2", "source": "eBay", "orderDate": "2026-10-20"}, ...] }
     """
     conn = get_db_connection()
     cursor = conn.cursor()
@@ -107,7 +107,7 @@ def get_order_sources(since: Optional[str] = None):
                 names[sid_s] = (str(name).strip() if name is not None else "") or sid_s
         sources = [{"id": k, "name": v} for k, v in sorted(names.items(), key=lambda kv: kv[1].lower())]
 
-        sql = "SELECT OrderID, OrderSourceID FROM [Orders]"
+        sql = "SELECT OrderID, OrderSourceID, OrderDate FROM [Orders]"
         params: list = []
         if since:
             try:
@@ -118,14 +118,15 @@ def get_order_sources(since: Optional[str] = None):
             params.append(d0)
         cursor.execute(sql, params)
         orders = []
-        for oid, sid in cursor.fetchall():
+        for oid, sid, odate in cursor.fetchall():
             if oid is None:
                 continue
             sid_s = str(sid).strip() if sid is not None else ""
             if not sid_s:
                 continue
             orders.append({"orderId": str(oid).strip(), "sourceId": sid_s,
-                           "source": names.get(sid_s) or sid_s})
+                           "source": names.get(sid_s) or sid_s,
+                           "orderDate": odate.strftime("%Y-%m-%d") if isinstance(odate, datetime) else None})
         return {"count": len(orders), "sources": sources, "orders": orders}
     except HTTPException:
         raise
