@@ -667,3 +667,240 @@ def list_columns(
     finally:
         cursor.close()
         conn.close()
+
+
+# ===========================================================================
+# Manual tracking from CRMReports (/warehouse/shipping -> "Add tracking").
+#
+# The office types a work order, a PRO number and picks a carrier; this writes
+# exactly what the Access "Orders New" form would: Orders.ShipVia (the Shippers
+# id behind the Ship Via combo) and [PROTrack No] on the order's row in the
+# Shipping subform. Nothing else is touched - no order lines, no dates, no
+# quantities - and nothing here reaches Sage 100 (CRMReports decides that
+# separately, and only for an invoice that already exists and is still open).
+#
+# Same safety rules as routes/orders_write.py:
+#   1. dry_run (default TRUE) returns the plan - the SQL it WOULD run - and
+#      writes nothing.
+#   2. A live write is refused unless ACCESS_WRITES_ENABLED=1 on the API
+#      process, exactly like order create / edit.
+# Column names are read from the table at call time (pyodbc cursor.columns),
+# so the INSERT only ever names columns that exist, and ShippingID is left to
+# Access when it is an AutoNumber.
+# ===========================================================================
+import os
+from typing import Any, Dict, List
+
+from pydantic import BaseModel
+
+
+def _manual_writes_enabled() -> bool:
+    return os.getenv("ACCESS_WRITES_ENABLED", "") == "1"
+
+
+def _columns_of(cursor, table: str) -> Dict[str, str]:
+    """{column: ODBC type name} for a table; falls back to names only."""
+    try:
+        out = {}
+        for r in cursor.columns(table=table):
+            out[str(r.column_name)] = str(r.type_name or "").upper()
+        if out:
+            return out
+    except Exception:
+        pass
+    cursor.execute(f"SELECT TOP 1 * FROM {_bracket(table)}")
+    return {c[0]: "" for c in cursor.description}
+
+
+def _shippers(cursor) -> List[Dict[str, str]]:
+    cursor.execute(f"SELECT [{SHIPPERS_KEY}], [ShipperName] FROM {_bracket(SHIPPERS_TABLE)}")
+    rows = []
+    for r in cursor.fetchall():
+        sid = "" if r[0] is None else str(r[0]).strip()
+        if not sid:
+            continue
+        rows.append({"id": sid, "name": (str(r[1]).strip() if r[1] is not None else "") or sid})
+    rows.sort(key=lambda x: x["name"].lower())
+    return rows
+
+
+def _shipping_rows(cursor, order_id: int) -> List[Dict[str, Any]]:
+    cursor.execute(
+        f"SELECT * FROM {_bracket(TRACKING_TABLE)} WHERE {_bracket(ORDER_COLUMN)} = ?",
+        (order_id,),
+    )
+    cols = [c[0] for c in cursor.description]
+    return [_format_row(r, cols) for r in cursor.fetchall()]
+
+
+@router.get("/manual/{order_id}", dependencies=[Depends(verify_api_key)])
+def manual_tracking_lookup(order_id: int):
+    """READ-ONLY. What CRMReports shows before the office saves tracking by
+    hand: the order (customer, ship-to, current Ship Via), its Shipping rows
+    (current PRO), and the Shippers list for the carrier dropdown."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        order = _lookup_one(cursor, ORDERS_TABLE, ORDERS_KEY, order_id)
+        if not order:
+            return {"found": False, "orderId": order_id, "shippers": _shippers(cursor)}
+        customer = _lookup_one(cursor, CUSTOMERS_TABLE, CUSTOMERS_KEY, _pick(order, [CUSTOMERS_KEY]))
+        ship_via = _pick(order, [SHIPPER_FK_ON_ORDER])
+        shipper = _lookup_one(cursor, SHIPPERS_TABLE, SHIPPERS_KEY, ship_via)
+        shipping = _shipping_rows(cursor, order_id)
+        return {
+            "found": True,
+            "orderId": order_id,
+            "order": {
+                "customerId": _pick(order, [CUSTOMERS_KEY]),
+                "customerName": _pick(customer, FIELD_CANDIDATES["customer"]),
+                "customerOrderNumber": _pick(order, ["CustomerOrderNumber"]),
+                "orderDate": _pick(order, ["OrderDate"]),
+                "shipName": _pick(order, ["ShipName"]),
+                "shipCity": _pick(order, ["ShipCity"]),
+                "shipRegion": _pick(order, ["ShipRegion"]),
+                "shipVia": "" if ship_via is None else str(ship_via).strip(),
+                "shipViaName": _pick(shipper, FIELD_CANDIDATES["shipper_name"]),
+                "urStoreId": _pick(order, ["URStoreID"]),
+            },
+            "shipping": [
+                {
+                    "shippingId": _pick(r, ["ShippingID"]),
+                    "pro": "" if _pick(r, [TRACKING_COLUMN]) is None else str(_pick(r, [TRACKING_COLUMN])).strip(),
+                    "noPack": _pick(r, ["NoPack"]),
+                    "shippingAdviceDate": _pick(r, [SHIPMENT_DATE_COLUMN]),
+                }
+                for r in shipping
+            ],
+            "shippers": _shippers(cursor),
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
+    finally:
+        cursor.close()
+        conn.close()
+
+
+class ManualTrackingIn(BaseModel):
+    order_id: int
+    pro: str
+    shipper_id: Optional[str] = None     # Shippers.ShipperID; None = leave Ship Via as is
+    dry_run: bool = True
+
+
+@router.post("/manual", dependencies=[Depends(verify_api_key)])
+def manual_tracking_set(body: ManualTrackingIn):
+    """Write Ship Via + PRO/Tracking No for one order, like the Access form.
+
+    Existing Shipping rows for the order get the PRO; when the order has none
+    yet, ONE row is inserted (ShippingID = OrderID unless AutoNumber, NoPack 1)
+    - the same shape the form creates. dry_run=True returns the plan only.
+    """
+    pro = (body.pro or "").strip()
+    if not pro:
+        raise HTTPException(status_code=400, detail="pro (tracking number) is required")
+    if len(pro) > 50:
+        raise HTTPException(status_code=400, detail="pro is longer than 50 characters")
+    shipper_id = (body.shipper_id or "").strip() or None
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        order = _lookup_one(cursor, ORDERS_TABLE, ORDERS_KEY, body.order_id)
+        if not order:
+            raise HTTPException(status_code=404, detail=f"Order {body.order_id} not found in Access")
+
+        shipper_name = None
+        if shipper_id is not None:
+            shipper = _lookup_one(cursor, SHIPPERS_TABLE, SHIPPERS_KEY, shipper_id)
+            if not shipper:
+                raise HTTPException(status_code=400, detail=f"Shipper '{shipper_id}' is not in the Shippers table")
+            shipper_name = _pick(shipper, FIELD_CANDIDATES["shipper_name"])
+
+        ship_cols = _columns_of(cursor, TRACKING_TABLE)
+        if TRACKING_COLUMN not in ship_cols:
+            raise HTTPException(status_code=500, detail=f"Column [{TRACKING_COLUMN}] not found on {TRACKING_TABLE}")
+
+        before = _shipping_rows(cursor, body.order_id)
+        plan: List[Dict[str, Any]] = []
+
+        if shipper_id is not None:
+            plan.append({
+                "what": "orders.shipVia",
+                "sql": f"UPDATE {_bracket(ORDERS_TABLE)} SET {_bracket(SHIPPER_FK_ON_ORDER)} = ? WHERE {_bracket(ORDERS_KEY)} = ?",
+                "params": [shipper_id, body.order_id],
+                "from": "" if _pick(order, [SHIPPER_FK_ON_ORDER]) is None else str(_pick(order, [SHIPPER_FK_ON_ORDER])).strip(),
+                "to": shipper_id,
+            })
+
+        if before:
+            plan.append({
+                "what": "shipping.pro.update",
+                "sql": f"UPDATE {_bracket(TRACKING_TABLE)} SET {_bracket(TRACKING_COLUMN)} = ? WHERE {_bracket(ORDER_COLUMN)} = ?",
+                "params": [pro, body.order_id],
+                "rows": len(before),
+                "from": [("" if _pick(r, [TRACKING_COLUMN]) is None else str(_pick(r, [TRACKING_COLUMN])).strip()) for r in before],
+                "to": pro,
+            })
+        else:
+            cols: List[str] = []
+            vals: List[Any] = []
+            id_type = ship_cols.get("ShippingID", "")
+            if "ShippingID" in ship_cols and "COUNTER" not in id_type and "AUTO" not in id_type:
+                cols.append("ShippingID")
+                vals.append(body.order_id)
+            cols.append(ORDER_COLUMN)
+            vals.append(body.order_id)
+            cols.append(TRACKING_COLUMN)
+            vals.append(pro)
+            if "NoPack" in ship_cols:
+                cols.append("NoPack")
+                vals.append(1)
+            plan.append({
+                "what": "shipping.insert",
+                "sql": f"INSERT INTO {_bracket(TRACKING_TABLE)} ({', '.join(_bracket(c) for c in cols)}) VALUES ({', '.join('?' for _ in cols)})",
+                "params": vals,
+                "note": "no Shipping row existed for this order - one is created like the form does",
+            })
+
+        result: Dict[str, Any] = {
+            "orderId": body.order_id,
+            "pro": pro,
+            "shipperId": shipper_id,
+            "shipperName": shipper_name,
+            "plan": plan,
+        }
+        if body.dry_run:
+            return {"dry_run": True, "written": False, **result}
+        if not _manual_writes_enabled():
+            raise HTTPException(
+                status_code=403,
+                detail="Live Access writes are DISABLED on this instance (ACCESS_WRITES_ENABLED=1 turns them on).",
+            )
+        for step in plan:
+            cursor.execute(step["sql"], step["params"])
+            step["rowcount"] = cursor.rowcount
+        conn.commit()
+        after = _shipping_rows(cursor, body.order_id)
+        result["shipping"] = [
+            {"shippingId": _pick(r, ["ShippingID"]), "pro": _pick(r, [TRACKING_COLUMN]), "noPack": _pick(r, ["NoPack"])}
+            for r in after
+        ]
+        return {"dry_run": False, "written": True, **result}
+    except HTTPException:
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+        raise
+    except Exception as e:
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+        raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
+    finally:
+        cursor.close()
+        conn.close()
